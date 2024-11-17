@@ -1,115 +1,71 @@
+
 import sys
 from EDF import schedule_edf
 from RM import schedule_rm
-from EE import schedule_ee
 
 def parse_input(file_name):
-    """
-    Parses the input file to extract system parameters and task descriptions.
-    """
+    """Parses the input file to extract tasks and system parameters."""
     with open(file_name, 'r') as file:
         lines = file.readlines()
 
-    # Parse the first line for system parameters
+    # Extract system parameters from the first line
     header = list(map(int, lines[0].strip().split()))
-    num_tasks = header[0]
     max_time = header[1]
-    power_settings = header[2:]  # Power levels for active and idle states
+    power_settings = header[2:]
 
-    # Parse the subsequent lines for task details
+    # Extract task details
     tasks = []
     for line in lines[1:]:
         parts = line.strip().split()
         task = {
-            'name': parts[0],
-            'period': int(parts[1]),  # Deadline/period of the task
-            'wcet': [int(parts[i]) for i in range(2, len(parts))]  # WCETs at different frequencies
+            "name": parts[0],
+            "deadline": int(parts[1]),
+            "wcet": list(map(int, parts[2:]))
         }
         tasks.append(task)
 
-    return num_tasks, max_time, power_settings, tasks
+    return tasks, max_time, power_settings
 
-def write_output(schedule, total_energy, output_file):
-    """
-    Writes the scheduling results and energy consumption to an output file.
-    Consecutive IDLE entries are condensed into a single line.
-    Ensures fields are aligned for better readability.
-    """
-    with open(output_file, 'w') as file:
-        current_time = 0
-        idle_start = None  # Start time of an idle period
-        idle_duration = 0
-        idle_energy = 0
+def print_schedule(schedule, total_energy, idle_time, total_time):
+    """Prints the schedule and additional information."""
+    print("-------------------------------------------")
+    print(f"        Printing Schedule Process")
+    print("-------------------------------------------")
+    print("<Time Started>  <Task Name>     <CPU Freq>      <Runtime>       <NRG Consumed>")
+    for entry in schedule:
+        print(f"{entry[0]:<16}  {entry[1]:<12}  {entry[2]:<12}  {entry[3]:<12}  {entry[4]:.2f} J")
 
-        # Header for the output
-        file.write(f"{'Start':<6} {'Task':<6} {'Freq':<6} {'Dur':<6} {'Energy':<10}\n")
-        file.write("=" * 40 + "\n")
-
-        for entry in schedule:
-            start_time = current_time
-            task_name = entry[1]
-            frequency = entry[2]
-            duration = entry[3]
-            energy = entry[4]
-
-            if task_name == "IDLE":
-                # Accumulate idle time and energy
-                if idle_start is None:
-                    idle_start = start_time
-                idle_duration += duration
-                idle_energy += energy
-            else:
-                # Write any accumulated IDLE entries
-                if idle_start is not None:
-                    file.write(
-                        f"{idle_start:<6} {'IDLE':<6} {'IDLE':<6} {idle_duration:<6} {idle_energy:<10.3f}J\n"
-                    )
-                    idle_start = None
-                    idle_duration = 0
-                    idle_energy = 0
-
-                # Write the current task entry
-                file.write(
-                    f"{start_time:<6} {task_name:<6} {frequency:<6} {duration:<6} {energy:<10.3f}J\n"
-                )
-
-            current_time += duration
-
-        # Write any remaining IDLE entries
-        if idle_start is not None:
-            file.write(
-                f"{idle_start:<6} {'IDLE':<6} {'IDLE':<6} {idle_duration:<6} {idle_energy:<10.3f}J\n"
-            )
-
-        # Write summary statistics
-        file.write("=" * 40 + "\n")
-        file.write(f"Total Energy: {total_energy:.3f}J\n")
-        file.write(f"Total Time: {current_time}\n")
+    idle_rate = (idle_time / total_time) * 100
+    print("-------------------------------------------")
+    print(f"        Additional Information")
+    print("-------------------------------------------")
+    print(f"Total Energy Consumption: {total_energy:.2f}J      Idle Rate: {idle_rate:.1f}%         Total Execution Time: {total_time}s")
 
 def main():
-    """
-    Main function to execute the scheduling algorithms based on command-line arguments.
-    """
-    # Read arguments
+    if len(sys.argv) < 3:
+        print("Usage: python main.py <input_file> <EDF|RM>")
+        sys.exit(1)
+
     input_file = sys.argv[1]
-    strategy = sys.argv[2]
-    energy_efficient = len(sys.argv) > 3 and sys.argv[3] == "EE"
+    algorithm = sys.argv[2].upper()
 
-    # Parse the input file
-    num_tasks, max_time, power_settings, tasks = parse_input(input_file)
+    tasks, max_time, power_settings = parse_input(input_file)
 
-    # Select and run the appropriate scheduling algorithm
-    if strategy == "EDF" and not energy_efficient:
-        schedule, total_energy = schedule_edf(tasks, max_time, power_settings)
-    elif strategy == "RM" and not energy_efficient:
-        schedule, total_energy = schedule_rm(tasks, max_time, power_settings)
-    elif energy_efficient:
-        schedule, total_energy = schedule_ee(tasks, max_time, power_settings, strategy)
+    if algorithm == "EDF":
+        print("-------------------------------------------")
+        print(f"        Now running EDF")
+        print("-------------------------------------------")
+        schedule, total_energy, idle_time, total_time = schedule_edf(tasks, max_time, power_settings)
+    elif algorithm == "RM":
+        print("-------------------------------------------")
+        print(f"        Now running RM")
+        print("-------------------------------------------")
+        schedule, total_energy, idle_time, total_time = schedule_rm(tasks, max_time, power_settings)
+    else:
+        print("Invalid algorithm. Choose EDF or RM.")
+        sys.exit(1)
 
-    # Write the results to an output file
-    output_file = f"output_{strategy}{'_EE' if energy_efficient else ''}.txt"
-    write_output(schedule, total_energy, output_file)
-    print(f"Output written to {output_file}")
+    print_schedule(schedule, total_energy, idle_time, total_time)
 
 if __name__ == "__main__":
     main()
